@@ -4,7 +4,7 @@ from google.cloud import bigquery
 import json
 
 # Main application title
-st.title("LLM to SQL command")
+st.title("Chatbot ABC")
 
 # Initialize session state variables if not already present
 if "gemini_api_key" not in st.session_state:
@@ -127,7 +127,7 @@ def run_bigquery_query(query):
             st.error(f"Error executing BigQuery SQL: {e}")
     else:
         st.error("BigQuery client not initialized or no query to run.")
-        
+
 # Configure Gemini API
 if gemini_api_key:
     try:
