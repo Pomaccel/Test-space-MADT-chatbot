@@ -3,7 +3,6 @@ import google.generativeai as genai
 from google.cloud import bigquery
 import json
 
-# test
 # Main application title
 st.title("LLM to SQL command")
 
@@ -80,8 +79,6 @@ for i, prompt in enumerate(st.session_state.user_input_history, start=1):
             st.error(f"Error generating AI response: {e}")
         break  # Exit the loop after processing the first clicked history button
 
-
-
 # Input for Gemini API Key
 gemini_api_key = st.text_input("Gemini API Key: ", placeholder="Type your API Key here...", type="password")
 
@@ -100,38 +97,37 @@ def init_bigquery_client():
         return None
 
 def preprocess_query(query):
-    # Remove any leading or trailing whitespace
-    query = query.strip()
-    
-    # Remove Markdown code block syntax if present
-    if query.startswith('```'):
-        query = query.split('\n', 1)[-1]  # Remove the first line if it starts with ```
-        query = query.rsplit('\n', 1)[0]  # Remove the last line if it's just ```
-       
-    return query, 
+    # Ensure the query is a string
+    if isinstance(query, str):
+        # Remove any leading or trailing whitespace
+        query = query.strip()
+        
+        # Remove Markdown code block syntax if present
+        if query.startswith('```'):
+            query = query.split('\n', 1)[-1]  # Remove the first line if it starts with ```
+            query = query.rsplit('\n', 1)[0]  # Remove the last line if it's just ```
+    return query  # Now returning a string, not a tuple
 
 def run_bigquery_query(query):
     client = init_bigquery_client()
     if client and query:
         try:
-            # Preprocess the query
             query = preprocess_query(query)
             st.write("Executing query:", query)  # Log the query being executed
             
-            # Set the default project and dataset
             job_config = bigquery.QueryJobConfig()
-            
             query_job = client.query(query, job_config=job_config)
             results = query_job.result()
+            df = results.to_dataframe()
             st.write("Query Results:")
-            st.write(results.to_dataframe())
+            st.dataframe(df)  # Display results in a nice format
         except ValueError as ve:
             st.error(f"Invalid SQL query: {ve}")
         except Exception as e:
             st.error(f"Error executing BigQuery SQL: {e}")
     else:
         st.error("BigQuery client not initialized or no query to run.")
-
+        
 # Configure Gemini API
 if gemini_api_key:
     try:
@@ -207,25 +203,22 @@ if gemini_api_key:
                     """
 
             # Add chat history to the prompt
-            for role, message in st.session_state.chat_history:
-                prompt += f"{role}: {message}\n"
-
-            prompt += f"User: {user_input}\n"
-            prompt += """Based on the user's input, generate an appropriate SQL query to retrieve the requested information from the database. 
-                        Be precise and ensure that the query follows SQL syntax correctly."""
-
-            response = model.generate_content(prompt)
-            bot_response = response.text.strip()  # Strip any leading/trailing whitespace
-            processed_query = preprocess_query(bot_response)
-            st.session_state.qry = processed_query
+            full_prompt = f"{prompt}\nUser Input: {user_input}\n"
+            response = model.generate_content(full_prompt)
+            bot_response = response.text
+            
+            st.session_state.qry = bot_response
             st.session_state.chat_history.append(("assistant", bot_response))
             st.chat_message("assistant").markdown(bot_response)
 
         except Exception as e:
             st.error(f"Error generating AI response: {e}")
 
-# Execute the BigQuery query if it exists
-if st.session_state.qry:
-    if st.button("Run SQL Query"):
+    # Run the BigQuery query if it exists
+    if st.session_state.qry:
         run_bigquery_query(st.session_state.qry)
+
+# Check if a rerun is needed
+if st.session_state.rerun_needed:
+    st.experimental_rerun()  # Rerun the app to refresh state
 
