@@ -1,9 +1,32 @@
 import streamlit as st
 import google.generativeai as genai
+from google.cloud import bigquery
+import json
+
+# test
+# Main application title
+st.title("LLM to SQL command")
 
 # Initialize session state variables if not already present
 if "gemini_api_key" not in st.session_state:
-    st.session_state.gemini_api_key = None 
+    st.session_state.gemini_api_key = None
+
+if "google_service_account_json" not in st.session_state:
+    st.session_state.google_service_account_json = None
+
+# Input for Google Service Account Key File using file uploader
+uploaded_file = st.file_uploader("Upload Google Service Account Key JSON", type="json")
+
+if uploaded_file:
+    try:
+        # Load the uploaded JSON file into session state
+        st.session_state.google_service_account_json = json.load(uploaded_file)
+        st.success("Google Service Account Key file uploaded successfully!")
+    except Exception as e:
+        st.error(f"Error reading the uploaded file: {e}")
+
+if "google_api_key" not in st.session_state:
+    st.session_state.google_api_key = None
 
 if "greeted" not in st.session_state:
     st.session_state.greeted = False
@@ -17,6 +40,9 @@ if "user_input_history" not in st.session_state:
 if "rerun_needed" not in st.session_state:
     st.session_state.rerun_needed = False  # Flag to control reruns
 
+if "qry" not in st.session_state:
+    st.session_state.qry = None  # Store SQL query here
+
 # Sidebar to display user input history as buttons
 st.sidebar.title("User Input History")
 
@@ -26,7 +52,7 @@ dropdown_option = st.sidebar.selectbox(
     ["0.Overview", "1.Predict", "2.Sale By location"]
 )
 
-# Add "Home" and "Clear History" buttons in the sidebar
+# Add "Clear History" button in the sidebar
 if st.sidebar.button("Clear History"):
     st.session_state.chat_history = []
     st.session_state.user_input_history = []
@@ -36,33 +62,75 @@ if st.sidebar.button("Clear History"):
 # Loop through the user input history and create a button for each one
 for i, prompt in enumerate(st.session_state.user_input_history, start=1):
     if st.sidebar.button(f"{i}. {prompt}"):
-        # Update chat history and re-run the selected conversation
         st.session_state.chat_history = [("user", prompt)]  # Start fresh with that prompt        
         st.session_state.rerun_needed = True  # Set flag to trigger a rerun
 
-        # Now handle the conversation logic below after rerun
         user_input = prompt
         try:
-            # Prompt to generate a response from the model
             query_prompt = f"""You are an AI assistant that transforms user questions into SQL queries to retrieve data from a BigQuery database. 
-            Use the schema information and generate a SQL query based on the user's input. User's input: '{user_input}'."""
+            Use the schema information and generate a SQL query based on the user's input: '{user_input}'."""
 
-            # Simulate a call to the model
             response = model.generate_content(query_prompt)
             bot_response = response.text
 
-            # Append AI response to chat history
+            st.session_state.qry = bot_response
             st.session_state.chat_history.append(("assistant", bot_response))
 
         except Exception as e:
             st.error(f"Error generating AI response: {e}")
         break  # Exit the loop after processing the first clicked history button
 
-# Main application title
-st.title("LLM to SQL command")
+
 
 # Input for Gemini API Key
 gemini_api_key = st.text_input("Gemini API Key: ", placeholder="Type your API Key here...", type="password")
+
+# Function to initialize BigQuery client
+def init_bigquery_client():
+    if st.session_state.google_service_account_json:
+        try:
+            # Initialize BigQuery client using the service account JSON
+            client = bigquery.Client.from_service_account_info(st.session_state.google_service_account_json)
+            return client
+        except Exception as e:
+            st.error(f"Error initializing BigQuery client: {e}")
+            return None
+    else:
+        st.error("Please upload a valid Google Service Account Key file.")
+        return None
+
+def preprocess_query(query):
+    # Remove any leading or trailing whitespace
+    query = query.strip()
+    
+    # Remove Markdown code block syntax if present
+    if query.startswith('```'):
+        query = query.split('\n', 1)[-1]  # Remove the first line if it starts with ```
+        query = query.rsplit('\n', 1)[0]  # Remove the last line if it's just ```
+       
+    return query, 
+
+def run_bigquery_query(query):
+    client = init_bigquery_client()
+    if client and query:
+        try:
+            # Preprocess the query
+            query = preprocess_query(query)
+            st.write("Executing query:", query)  # Log the query being executed
+            
+            # Set the default project and dataset
+            job_config = bigquery.QueryJobConfig()
+            
+            query_job = client.query(query, job_config=job_config)
+            results = query_job.result()
+            st.write("Query Results:")
+            st.write(results.to_dataframe())
+        except ValueError as ve:
+            st.error(f"Invalid SQL query: {ve}")
+        except Exception as e:
+            st.error(f"Error executing BigQuery SQL: {e}")
+    else:
+        st.error("BigQuery client not initialized or no query to run.")
 
 # Configure Gemini API
 if gemini_api_key:
@@ -70,7 +138,8 @@ if gemini_api_key:
         genai.configure(api_key=gemini_api_key)
         model = genai.GenerativeModel("gemini-pro")
     except Exception as e:
-        st.error(f"Error configuring Gemini API Key: {e}")
+        st.error(f"Error configuring Gemini API: {e}")
+        model = None  # Ensure 'model' is None if initialization fails
 
     # Display chat history
     for role, message in st.session_state.chat_history:
@@ -84,7 +153,7 @@ if gemini_api_key:
 
         try:
             response = model.generate_content(greeting_prompt)
-            bot_response = response.text
+            bot_response = response.text.strip()
             st.session_state.chat_history.append(("assistant", bot_response))
             st.chat_message("assistant").markdown(bot_response)
             st.session_state.greeted = True
@@ -93,7 +162,6 @@ if gemini_api_key:
 
     # Input box for user's message
     if user_input := st.chat_input("Type your message here..."):
-        # Append user input to chat history and user input history
         st.session_state.chat_history.append(("user", user_input))
         st.session_state.user_input_history.append(user_input)
         st.chat_message("user").markdown(user_input)
@@ -104,89 +172,38 @@ if gemini_api_key:
                     Use this information to generate accurate SQL queries based on user input. 
                     ### Data Dictionary 
 
-                    #### Table: customer 
-                    | Column Name      | Data Type   | Description                                 | 
-                    |------------------|-------------|---------------------------------------------| 
-                    | CustomerID       | STRING      |                                             | 
-                    | Customer         | STRING      |                                             | 
-                    | Country          | STRING      | Country                                     | 
-                    | OpticMainID      | STRING      |                                             | 
-                    | Category         | STRING      |                                             | 
-                    | zoneId           | STRING      |                                             |
-
-                    #### Table: date_dimension 
-                    | Column Name      | Data Type   | Description                                 | 
-                    |------------------|-------------|---------------------------------------------| 
-                    | date_key         | STRING      |                                             | 
-                    | full_date        | DATETIME    |                                             | 
-                    | year             | INT64       |                                             | 
-                    | month            | INT64       |                                             | 
-                    | day              | INT64       |                                             | 
-                    | week             | INT64       |                                             |  
-                    | quarter          | INT64       |                                             |
-                    
-                    #### Table: invoice 
-                    | Column Name      | Data Type   | Description                                 | 
-                    |------------------|-------------|---------------------------------------------| 
-                    | InvoiceNo        | STRING      |                                             | 
-                    | CustomerID       | STRING      |                                             | 
-                    | InvoiceDate      | DATE        |                                             | 
-
-                    #### Table: invoice_type 
-                    | Column Name      | Data Type   | Description                                 | 
-                    |------------------|-------------|---------------------------------------------| 
-                    | typeId           | STRING      |                                             | 
-                    | type_name        | STRING      |                                             | 
-
-                    #### Table: product
-                    | Column Name      | Data Type   | Description                                 | 
-                    |------------------|-------------|---------------------------------------------| 
-                    | ProductId        | STRING      |                                             | 
-                    | lentype          | STRING      |                                             |
-                    | Part_Description | STRING      |                                             | 
-                    | Material_Type    | STRING      |                                             | 
-                    | Lens_Type        | STRING      |                                             | 
-                    | price            | FLOAT64     |                                             | 
-
-                    #### Table: reorder 
-                    | Column Name      | Data Type   | Description                                 | 
-                    |------------------|-------------|---------------------------------------------| 
-                    | reorder_cause_id | STRING      |                                             | 
-                    | cause            | STRING      |                                             |
-
-                    #### Table: store 
-                    | Column Name      | Data Type   | Description                                 | 
-                    |------------------|-------------|---------------------------------------------| 
-                    | StoreId          | STRING      |                                             | 
-                    | Store            | STRING      |                                             | 
-                    
-                    #### Table: Transaction 
-                    | Column Name       | Data Type   | Description                                 | 
-                    |-------------------|-------------|---------------------------------------------| 
-                    | InvoiceNo         | STRING      |                                             | 
-                    | ProductId         | STRING      |                                             | 
-                    | Quantity          | STRING      |                                             | 
-                    | StoreId           | INT64       |                                             | 
-                    | TypeId            | STRING      |                                             | 
-                    | Reordered_Cause_ID| STRING      |                                             | 
-
-                    #### Table: zoning 
-                    | Column Name      | Data Type   | Description                                 | 
-                    |------------------|-------------|---------------------------------------------| 
-                    | ZoneId           | STRING      |                                             | 
-                    | provinceEN       | STRING      |                                             | 
-                    | provinceTH       | STRING      |                                             | 
-                    | Region           | STRING      |                                             | 
-                    
-                    ### Relationships between tables: 
-                    - `invoice.CustomerID` references `customer.CustomerID`.
-                    - `transaction.InvoiceNo` references `invoice.InvoiceNo`.
-                    - `transaction.ProductId` references `product.ProductId`.
-                    - `transaction.StoreId` references `store.StoreId`.
-                    - `transaction.TypeId` references `invoice_type.typeId`.
-                    - `transaction.Reordered_Cause_ID` references `reorder.reorder_cause_id`.
-                    - `customer.zoneId` references `zoning.ZoneId`.
-                    - `invoice.InvoiceDate` references `date_dimension.full_date`. \n
+                    Table 'madt-finalproject.finalproject_data.inv_transaction'
+                    | Column Name                       | Data Type   | Description                                 | 
+                    |-----------------------------------|-------------|---------------------------------------------| 
+                    | ProductId                         | STRING      | ProductId                                   | 
+                    | StoreId                           | STRING      | StoreId                                     | 
+                    | TypeId                            | STRING      | Invoice type ID.                            |
+                    | InvoiceNo                         | STRING      | Invoice number.                             | 
+                    | Reorder_Cause_ID                  | STRING      | Reorder id.                                 | 
+                    | Quantity                          | INT64       | Quantity of products in each invoices.      | 
+                    | CustomerID                        | STRING      | Customer ID.                                | 
+                    | Customer                          | STRING      | Customer name.                              | 
+                    | Country                           | STRING      | Customer country.                           | 
+                    | OpticMainID                       | STRING      | Optical ID for each customer.               | 
+                    | Category                          | STRING      | Customer category.                          | 
+                    | zoneId                            | STRING      | Zone ID.                                    |
+                    | InvoiceDate                       | DATE        | Invoice Date.                               |
+                    | InvoiceYear                       | INT64       | Invoice Year.                               |
+                    | InvoiceMonth                      | INT64       | Invoice Month.                              |
+                    | InvoiceDay                        | INT64       | Invoice day.                                |
+                    | InvoiceWeek                       | INT64       | Invoice week.                               |
+                    | InvoiceQuarter                    | INT64       | Invoice quarter.                            |
+                    | type_name                         | STRING      | Type of invoice including Credit Note, Debit Note, Invoice Sales, Other charge  | 
+                    | lenstype                          | STRING      | lenstype                                    | 
+                    | Part_Description                  | STRING      | Product description                         | 
+                    | Material_Type                     | STRING      | Type of material.                           | 
+                    | Lens_Type                         | STRING      | Type of lens.                               | 
+                    | price                             | FLOAT64     | Price of each products.                     | 
+                    | cause                             | STRING      | cause of reorder.                           |  
+                    | Store                             | STRING      | Store name.                                 | 
+                    | Zoning_ProvinceEN                 | STRING      | Province(English)                           | 
+                    | Zoning_ProvinceTH                 | STRING      | Province(Thai)                              | 
+                    | Zoning_Region                     | STRING      | Region                                      | 
                     """
 
             # Add chat history to the prompt
@@ -198,16 +215,17 @@ if gemini_api_key:
                         Be precise and ensure that the query follows SQL syntax correctly."""
 
             response = model.generate_content(prompt)
-            bot_response = response.text
-
-            # Append AI response to chat history
+            bot_response = response.text.strip()  # Strip any leading/trailing whitespace
+            processed_query = preprocess_query(bot_response)
+            st.session_state.qry = processed_query
             st.session_state.chat_history.append(("assistant", bot_response))
             st.chat_message("assistant").markdown(bot_response)
 
         except Exception as e:
             st.error(f"Error generating AI response: {e}")
 
-# Check if rerun is needed
-if st.session_state.rerun_needed:
-    st.session_state.rerun_needed = False  # Reset flag
-    st.rerun()  # This will trigger a refresh
+# Execute the BigQuery query if it exists
+if st.session_state.qry:
+    if st.button("Run SQL Query"):
+        run_bigquery_query(st.session_state.qry)
+
