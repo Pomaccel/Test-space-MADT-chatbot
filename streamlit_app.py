@@ -2,6 +2,8 @@ import streamlit as st
 import google.generativeai as genai
 from google.cloud import bigquery
 import json
+import db_dtypes
+
 
 # Main application title
 st.title("Chatbot ABC")
@@ -118,6 +120,8 @@ def run_bigquery_query(query):
             job_config = bigquery.QueryJobConfig()
             query_job = client.query(query, job_config=job_config)
             results = query_job.result()
+            
+            # Convert to a pandas DataFrame
             df = results.to_dataframe()
             st.write("Query Results:")
             st.dataframe(df)  # Display results in a nice format
@@ -127,6 +131,7 @@ def run_bigquery_query(query):
             st.error(f"Error executing BigQuery SQL: {e}")
     else:
         st.error("BigQuery client not initialized or no query to run.")
+
 
 # Configure Gemini API
 if gemini_api_key:
