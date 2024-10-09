@@ -115,7 +115,7 @@ def run_bigquery_query(query):
     if client and query:
         try:
             query = preprocess_query(query)
-            st.write("Executing query:", query)  # Log the query being executed
+            #st.write("Executing query:", query)  # Log the query being executed
             
             job_config = bigquery.QueryJobConfig()
             query_job = client.query(query, job_config=job_config)
