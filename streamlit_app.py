@@ -2,8 +2,9 @@ import streamlit as st
 import google.generativeai as genai
 from google.cloud import bigquery
 import json
-import db_dtypes
-
+import pandas as pd
+import matplotlib.pyplot as plt  # For matplotlib graphs
+import plotly.express as px  # For plotly graphs
 
 # Main application title
 st.title("Chatbot ABC")
@@ -115,7 +116,7 @@ def run_bigquery_query(query):
     if client and query:
         try:
             query = preprocess_query(query)
-            #st.write("Executing query:", query)  # Log the query being executed
+            # st.write("Executing query:", query)  # Log the query being executed
             
             job_config = bigquery.QueryJobConfig()
             query_job = client.query(query, job_config=job_config)
@@ -125,13 +126,16 @@ def run_bigquery_query(query):
             df = results.to_dataframe()
             st.write("Query Results:")
             st.dataframe(df)  # Display results in a nice format
+
+            return df  # Return the DataFrame for plotting
+        
         except ValueError as ve:
             st.error(f"Invalid SQL query: {ve}")
         except Exception as e:
             st.error(f"Error executing BigQuery SQL: {e}")
     else:
         st.error("BigQuery client not initialized or no query to run.")
-
+    return None  # Return None if the query fails
 
 # Configure Gemini API
 if gemini_api_key:
@@ -191,7 +195,7 @@ if gemini_api_key:
                     | InvoiceDate                       | DATE        | Invoice Date.                               |
                     | InvoiceYear                       | INT64       | Invoice Year.                               |
                     | InvoiceMonth                      | INT64       | Invoice Month.                              |
-                    | InvoiceDay                        | INT64       | Invoice day.                                |
+                    | InvoiceDay                        | INT64       | Invoice day.                                | 
                     | InvoiceWeek                       | INT64       | Invoice week.                               |
                     | InvoiceQuarter                    | INT64       | Invoice quarter.                            |
                     | type_name                         | STRING      | Type of invoice including Credit Note, Debit Note, Invoice Sales, Other charge  | 
@@ -200,30 +204,49 @@ if gemini_api_key:
                     | Material_Type                     | STRING      | Type of material.                           | 
                     | Lens_Type                         | STRING      | Type of lens.                               | 
                     | price                             | FLOAT64     | Price of each products.                     | 
-                    | cause                             | STRING      | cause of reorder.                           |  
-                    | Store                             | STRING      | Store name.                                 | 
-                    | Zoning_ProvinceEN                 | STRING      | Province(English)                           | 
-                    | Zoning_ProvinceTH                 | STRING      | Province(Thai)                              | 
-                    | Zoning_Region                     | STRING      | Region                                      | 
-                    """
+                    | cause                             | STRING      | Cause.                                      |
+                    | region                            | STRING      | Region.                                     | 
 
-            # Add chat history to the prompt
-            full_prompt = f"{prompt}\nUser Input: {user_input}\n"
-            response = model.generate_content(full_prompt)
+                    User question: '{}'""".format(user_input)
+
+            response = model.generate_content(prompt)
             bot_response = response.text
-            
-            st.session_state.qry = bot_response
+            st.session_state.qry = bot_response  # Store query for later use
             st.session_state.chat_history.append(("assistant", bot_response))
-            st.chat_message("assistant").markdown(bot_response)
 
         except Exception as e:
             st.error(f"Error generating AI response: {e}")
 
-    # Run the BigQuery query if it exists
-    if st.session_state.qry:
-        run_bigquery_query(st.session_state.qry)
+        # Run the generated SQL query and fetch results
+        df = run_bigquery_query(st.session_state.qry)
 
-# Check if a rerun is needed
-if st.session_state.rerun_needed:
-    st.experimental_rerun()  # Rerun the app to refresh state
+        # Input for selecting graph type
+        if df is not None and not st.session_state.rerun_needed:  # Ensure df is available and rerun is not needed
+            graph_type = st.selectbox("Select graph type:", ["Select Graph Type", "Bar Chart", "Stacked Bar Chart", "Pie Chart"])
 
+            if graph_type == "Bar Chart":
+                x_axis = st.selectbox("Select X-axis column:", df.columns[0])
+                y_axis = st.selectbox("Select Y-axis column:", df.columns[1])
+                plt.figure()  # Create a new figure for the plot
+                plt.bar(df[x_axis], df[y_axis])
+                plt.xlabel(x_axis)
+                plt.ylabel(y_axis)
+                plt.title("Bar Chart")
+                st.pyplot()
+
+            elif graph_type == "Stacked Bar Chart":
+                x_axis = st.selectbox("Select X-axis column:", df.columns[0])
+                y_axis = st.selectbox("Select Y-axis column:", df.columns[1])
+                plt.figure()  # Create a new figure for the plot
+                df.groupby(x_axis)[y_axis].sum().plot(kind='bar', stacked=True)
+                plt.xlabel(x_axis)
+                plt.ylabel(y_axis)
+                plt.title("Stacked Bar Chart")
+                st.pyplot()
+
+            elif graph_type == "Pie Chart":
+                column = st.selectbox("Select column for Pie Chart:", df.columns)
+                plt.figure()  # Create a new figure for the plot
+                df[column].value_counts().plot.pie(autopct='%1.1f%%')
+                plt.title("Pie Chart")
+                st.pyplot()

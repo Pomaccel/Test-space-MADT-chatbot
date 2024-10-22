@@ -3,3 +3,5 @@ google.generativeai
 google.cloud.bigquery
 pandas
 db_dtypes
+matplotlib.pyplot
+plotly.express
