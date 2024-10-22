@@ -6,8 +6,10 @@ import pandas as pd
 import matplotlib.pyplot as plt  # For matplotlib graphs
 import plotly.express as px  # For plotly graphs
 
+# Chatbot + Grpah Funvtion 
+
 # Main application title
-st.title("Chatbot ABC + Graph")
+st.title("Chatbot ABC")
 
 # Initialize session state variables if not already present
 if "gemini_api_key" not in st.session_state:
@@ -116,9 +118,8 @@ def run_bigquery_query(query):
     if client and query:
         try:
             query = preprocess_query(query)
-            st.write("Executing query:", query)  # Log the query being executed
+            # st.write("Executing query:", query)  # Log the query being executed
             
-            # Set the default project and dataset
             job_config = bigquery.QueryJobConfig()
             query_job = client.query(query, job_config=job_config)
             results = query_job.result()
@@ -210,13 +211,23 @@ if gemini_api_key:
 
                     User question: '{}'""".format(user_input)
 
+            # Call the AI model to generate SQL query
             response = model.generate_content(prompt)
             bot_response = response.text
-            st.session_state.qry = bot_response  # Store query for later use
+            st.session_state.qry = bot_response  # Store the generated query
             st.session_state.chat_history.append(("assistant", bot_response))
+            st.chat_message("assistant").markdown(bot_response)
+
+            # Run the generated SQL query
+            df = run_bigquery_query(st.session_state.qry)
+            
+            # Display query results
+            if df is not None:
+                st.write("Here are the results of your query:")
+                st.dataframe(df)  # Display the DataFrame in a table format
 
         except Exception as e:
-            st.error(f"Error generating AI response: {e}")
+            st.error(f"Error generating or executing query: {e}")
 
         # Run the generated SQL query and fetch results
         df = run_bigquery_query(st.session_state.qry)
