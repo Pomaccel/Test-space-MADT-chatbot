@@ -6,10 +6,10 @@ import pandas as pd
 import matplotlib.pyplot as plt  # For matplotlib graphs
 import plotly.express as px  # For plotly graphs
 
-# Chatbot + Grpah Funvtion 
+# Chatbot + Graph Function 
 
 # Main application title
-st.title("Chatbot ABC+ Graph test")
+st.title("Chatbot ABC+ Graph Test")
 
 # Initialize session state variables if not already present
 if "gemini_api_key" not in st.session_state:
@@ -118,8 +118,6 @@ def run_bigquery_query(query):
     if client and query:
         try:
             query = preprocess_query(query)
-            #st.write("Executing query:", query)  # Log the query being executed
-            
             job_config = bigquery.QueryJobConfig()
             query_job = client.query(query, job_config=job_config)
             results = query_job.result()
@@ -214,19 +212,14 @@ if gemini_api_key:
             # Call the AI model to generate SQL query
             response = model.generate_content(prompt)
             bot_response = response.text
-            st.session_state.qry = bot_response  # Store the generated query
+            st.session_state.qry = bot_response
+
+            # Display the generated query
             st.session_state.chat_history.append(("assistant", bot_response))
             st.chat_message("assistant").markdown(bot_response)
 
-            # Run the generated SQL query
+            # Execute the query and display the results
             df = run_bigquery_query(st.session_state.qry)
-            
-
-        except Exception as e:
-            st.error(f"Error generating or executing query: {e}")
-
-        # Run the generated SQL query and fetch results
-        df = run_bigquery_query(st.session_state.qry)
 
         # Input for selecting graph type
         if df is not None and not st.session_state.rerun_needed:  # Ensure df is available and rerun is not needed
