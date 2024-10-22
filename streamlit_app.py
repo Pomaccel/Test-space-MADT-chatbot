@@ -118,7 +118,7 @@ def run_bigquery_query(query):
     if client and query:
         try:
             query = preprocess_query(query)
-            # st.write("Executing query:", query)  # Log the query being executed
+            #st.write("Executing query:", query)  # Log the query being executed
             
             job_config = bigquery.QueryJobConfig()
             query_job = client.query(query, job_config=job_config)
@@ -221,10 +221,6 @@ if gemini_api_key:
             # Run the generated SQL query
             df = run_bigquery_query(st.session_state.qry)
             
-            # Display query results
-            if df is not None:
-                st.write("Here are the results of your query:")
-                st.dataframe(df)  # Display the DataFrame in a table format
 
         except Exception as e:
             st.error(f"Error generating or executing query: {e}")
