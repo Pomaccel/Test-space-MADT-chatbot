@@ -9,7 +9,7 @@ import plotly.express as px  # For plotly graphs
 # Chatbot + Grpah Funvtion 
 
 # Main application title
-st.title("Chatbot ABC+ Graph")
+st.title("Chatbot ABC+ Graph test")
 
 # Initialize session state variables if not already present
 if "gemini_api_key" not in st.session_state:
